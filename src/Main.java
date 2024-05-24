@@ -37,18 +37,19 @@ import static com.MAVLinkModule.MavlinkV1.common.msg_vfr_hud.MAVLINK_MSG_ID_VFR_
 import static com.MAVLinkModule.MavlinkV1.common.msg_vibration.MAVLINK_MSG_ID_VIBRATION;
 import static com.MAVLinkModule.MavlinkV1.enums.MAV_CMD.*;
 import static com.MAVLinkModule.MavlinkV1.enums.MAV_COMPONENT.MAV_COMP_ID_AUTOPILOT1;
+import static com.MAVLinkModule.MavlinkV1.enums.MAV_FRAME.MAV_FRAME_GLOBAL_RELATIVE_ALT;
 import static com.MAVLinkModule.MavlinkV1.enums.MAV_FTP_OPCODE.*;
 import static com.MAVLinkModule.MavlinkV1.minimal.msg_heartbeat.MAVLINK_MSG_ID_HEARTBEAT;
 
 
 public class Main {
     msg_heartbeat mHeartbeat = null;
-    static int chunkSize = 10;
+    static int chunkSize = 200;
     public static void main(String[] args) throws IOException {
         // parseParamFile("output.bin");
         // ParamUnpacker.unpack("output.bin");
-        connectViaSerial("040507.txt");
-
+        // connectViaSerial("040507.txt");
+        connectViaUDP();
         // Parampck.unpackFromFile("040507.txt");
     }
 
@@ -61,7 +62,7 @@ public class Main {
         address = InetAddress.getByName("172.25.38.247");
 
 
-
+// PixhawkParameterController.ardupilotParamsMap["FS_THR_VALUE"]
 
 
         int[] commands = new int[] {
@@ -102,7 +103,7 @@ public class Main {
         MAVLinkMessage mavMessage = null;
         Parser mavParser = new Parser();
         byte[] buffer = new byte[2500];
-        Socket sp = new Socket("172.19.201.22", 5763);
+        Socket sp = new Socket("172.25.38.247", 5763);
         InputStream in = sp.getInputStream();
         while(true) {
             int len = in.read(buffer);
@@ -128,7 +129,7 @@ public class Main {
         byte[] buffer = new byte[2500];
 
 
-        Socket sp = new Socket("172.25.38.247", 5763);
+        Socket sp = new Socket("172.25.38.247", 5760);
 
         InputStream in = sp.getInputStream();
         OutputStream out = sp.getOutputStream();
@@ -196,14 +197,14 @@ public class Main {
         MAVLinkPacket mavPkt = null;
         MAVLinkMessage mavMessage = null;
         Parser mavParser = new Parser();
-        SerialPort sp = SerialPort.getCommPorts()[1];
+        SerialPort sp = SerialPort.getCommPorts()[0];
         sp.setComPortParameters(57600, 8, 1, 0);
         sp.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
         sp.openPort();
         OutputStream out = sp.getOutputStream();
         // doCalibrate(out);
 
-        byte[] byteArray5  = packFtpPacket((short)0, (short) 1, (short) MAV_COMPONENT.MAV_COMP_ID_ALL, 0,0,(short)0, (short) MAV_FTP_OPCODE_RESETSESSION,"",(short)0);
+ /*       byte[] byteArray5  = packFtpPacket((short)0, (short) 1, (short) MAV_COMPONENT.MAV_COMP_ID_ALL, 0,0,(short)0, (short) MAV_FTP_OPCODE_RESETSESSION,"",(short)0);
         out.write(byteArray5);
         out.flush();
 
@@ -211,9 +212,9 @@ public class Main {
         out.write(byteArray5);
         out.flush();
 
-        byteArray5  = packFtpPacket((short)0, (short) 1, (short) MAV_COMPONENT.MAV_COMP_ID_ALL, 0,0,(short)2, (short) MAV_FTP_OPCODE_BURSTREADFILE,"",(short)10);
+        byteArray5  = packFtpPacket((short)0, (short) 1, (short) MAV_COMPONENT.MAV_COMP_ID_ALL, 0,0,(short)2, (short) MAV_FTP_OPCODE_BURSTREADFILE,"",(short)chunkSize);
         out.write(byteArray5);
-        out.flush();
+        out.flush();*/
 
         InputStream in = sp.getInputStream();
         byte[] buffer = new byte[128];
@@ -233,7 +234,7 @@ public class Main {
                         mavMessage = mavPkt.unpack();
                         if (mavMessage != null) {
                             if (mavMessage instanceof msg_file_transfer_protocol) {
-                                chunkSize = Math.min(chunkSize , 238);
+                                chunkSize = Math.min(chunkSize , 237);
                                 byte[] array = new byte[chunkSize];
                                 for(int i = 0 ; i <array.length;i++) {
                                     array[i] = (byte) ( ((msg_file_transfer_protocol) mavMessage).payload[i+12] );
@@ -266,8 +267,8 @@ public class Main {
         out.flush();
     }
 
-    private static void connectViaUDP() throws IOException {
-        DatagramSocket serverSocket = new DatagramSocket(Integer.parseInt("18570"));
+    private static void connectViaUDPforPort() throws IOException {
+        DatagramSocket serverSocket = new DatagramSocket(Integer.parseInt("14550"));
         System.out.println("Server Started. Listening for Clients on port 18570" + "...");
         // Assume messages are not over 1024 bytes
         byte[] receiveData = new byte[1024];
@@ -285,36 +286,104 @@ public class Main {
             Timestamp timestamp = new Timestamp(System.currentTimeMillis());
             System.out.println("[" + timestamp.toString() + " ,IP: " + IPAddress + " ,Port: " + port +"]  " + clientMessage);
         }
+    }
 
+    private static void connectViaUDP() throws IOException {
+        DatagramSocket serverSocket = new DatagramSocket(14550); // Listening port for UDP
+        Parser mavParser = new Parser();
+        byte[] receiveData = new byte[1024];
+        DatagramPacket receivePacket;
 
-//        InetAddress address = InetAddress.getByName("172.25.38.247");
-//        int port = 18570;
-//        DatagramSocket socket = new DatagramSocket(port, address);
-//
-//        byte[] buffer = new byte[500];
-//        MAVLinkPacket mavPkt = null;
-//        MAVLinkMessage mavMessage = null;
-//        Parser mavParser = new Parser();
-//        DatagramPacket receivePacket = new DatagramPacket(buffer, buffer.length);
-//        socket.receive(receivePacket);
-//
-//        while(true) {
-//            for (byte byteValue : buffer) {
-//                mavPkt = mavParser.mavlink_parse_char(byteValue);
-//                System.out.println("copy[i] : " + byteValue);
-//                System.out.println("mavPkt :" + mavPkt);
-//
-//                if (mavPkt != null) {
-//                    mavMessage = mavPkt.unpack();
-//                    if (mavMessage != null) {
-//                        System.out.println("mavMessage = " + mavMessage);
-//                    }
-//                }
-//            }
-//        }
+        boolean isFirst = false;
+
+        while (true) {
+            receivePacket = new DatagramPacket(receiveData, receiveData.length);
+            serverSocket.receive(receivePacket);
+            System.out.println("seq# = " + receivePacket.getData()[4]);
+
+            if(isFirst) {
+                isFirst = false;
+                getAllParameters(serverSocket, receivePacket.getAddress(),receivePacket.getPort());
+            }
+            MAVLinkPacket mavPacket = null;
+            for (byte byteValue : receivePacket.getData()) {
+                mavPacket = mavParser.mavlink_parse_char(byteValue);
+                if (mavPacket != null) {
+                    MAVLinkMessage mavMessage = mavPacket.unpack();
+                    if (mavMessage != null) {
+                        System.out.println("mavMessage = " + mavMessage);
+                        if (mavMessage instanceof msg_mission_request_int) {
+                        }
+                    }
+                }
+            }
+        }
+    }
+    private static byte[] packMissionCount() {
+        msg_param_request_list msg = new msg_param_request_list();
+        msg.target_component = 0;
+        msg.target_system = 1;
+        return msg.pack().encodePacket();
+    }
+    private static void getAllParameters(DatagramSocket socket, InetAddress addr, int port) throws IOException {
+        byte[] byteArray = packMissionCount();
+        socket.send(new DatagramPacket(byteArray, byteArray.length, addr, port));
     }
 
 
+    private static void setMissionWithoutAck(DatagramSocket socket, InetAddress addr, int port) throws IOException {
+        byte[] byteArray = null;
+        byteArray = packMissionCount(4);
+        socket.send(new DatagramPacket(byteArray, byteArray.length, addr, port));
+        // need to receive MISSION_REQUEST_INT
+        byteArray = packmMissionPacket(MAV_CMD_NAV_TAKEOFF, 473977500, 85456071, 50, (short) 1, (short) 0);
+        socket.send(new DatagramPacket(byteArray, byteArray.length, addr, port));
+        // need to receive MISSION_REQUEST_INT
+        byteArray = packmMissionPacket(MAV_CMD_NAV_WAYPOINT, 473978770, 85458155, 50, (short) 0, (short) 1);
+        socket.send(new DatagramPacket(byteArray, byteArray.length, addr, port));
+        // need to receive MISSION_REQUEST_INT
+        byteArray = packmMissionPacket(MAV_CMD_NAV_WAYPOINT, 473978762, 85456258, 50, (short) 0, (short) 2);
+        socket.send(new DatagramPacket(byteArray, byteArray.length, addr, port));
+        // need to receive MISSION_REQUEST_INT
+        byteArray = packmMissionPacket(MAV_CMD_NAV_WAYPOINT, 473978762, 85466258, 0, (short) 0, (short) 3);
+        socket.send(new DatagramPacket(byteArray, byteArray.length, addr, port));
+
+    }
+    private static void startMission(DatagramSocket socket, InetAddress addr, int port) throws IOException {
+        byte[] byteArray  = packMissionCount(4);
+        socket.send(new DatagramPacket(byteArray,byteArray.length,addr,port));
+        byteArray = packmMissionPacket(MAV_CMD_NAV_TAKEOFF, 473977500, 85456071,50,(short) 1, (short) 0);
+        socket.send(new DatagramPacket(byteArray,byteArray.length,addr,port));
+        byteArray = packmMissionPacket(MAV_CMD_NAV_WAYPOINT, 473978770, 85458155,50,(short) 0,(short) 1);
+        socket.send(new DatagramPacket(byteArray,byteArray.length,addr,port));
+        byteArray = packmMissionPacket(MAV_CMD_NAV_WAYPOINT, 473978762, 85456258,50,(short) 0,(short) 2);
+        socket.send(new DatagramPacket(byteArray,byteArray.length,addr,port));
+        byteArray = packmMissionPacket(MAV_CMD_NAV_RETURN_TO_LAUNCH, 0, 0,0,(short) 0, (short) 3);
+        socket.send(new DatagramPacket(byteArray,byteArray.length,addr,port));
+    }
+    private static byte[] packMissionCount(int count) {
+        msg_mission_count msg = new msg_mission_count();
+        msg.count = count;
+        msg.target_component = 1;
+        msg.target_system = 1;
+        return msg.pack().encodePacket();
+    }
+    private static byte[] packmMissionPacket(int cmd, int x, int y, float z, short current, short seq) {
+        msg_mission_item_int msg = new msg_mission_item_int();
+        msg.target_system = 1;
+        msg.target_component = 1;
+        msg.sysid = 255;
+        msg.compid = 1;
+        msg.command = cmd;
+        msg.frame = MAV_FRAME_GLOBAL_RELATIVE_ALT;
+        msg.autocontinue = 1;
+        msg.current = current;
+        msg.seq = seq;
+        msg.x = x;
+        msg.y = y;
+        msg.z = z;
+        return msg.pack().encodePacket();
+    }
     private static byte[] packFtpPacket(short target_network ,short target_system, short target_component,int sysid, int compid, short seq, short opcode, String data, short chunkSize) {
         short[] payload = new short[251];
         msg_file_transfer_protocol msg = new msg_file_transfer_protocol();
