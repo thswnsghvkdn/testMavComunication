@@ -35,25 +35,64 @@ import static com.MAVLinkModule.MavlinkV1.common.msg_servo_output_raw.MAVLINK_MS
 import static com.MAVLinkModule.MavlinkV1.common.msg_sys_status.MAVLINK_MSG_ID_SYS_STATUS;
 import static com.MAVLinkModule.MavlinkV1.common.msg_vfr_hud.MAVLINK_MSG_ID_VFR_HUD;
 import static com.MAVLinkModule.MavlinkV1.common.msg_vibration.MAVLINK_MSG_ID_VIBRATION;
+import static com.MAVLinkModule.MavlinkV1.enums.MAV_AUTOPILOT.MAV_AUTOPILOT_INVALID;
 import static com.MAVLinkModule.MavlinkV1.enums.MAV_CMD.*;
 import static com.MAVLinkModule.MavlinkV1.enums.MAV_COMPONENT.MAV_COMP_ID_AUTOPILOT1;
 import static com.MAVLinkModule.MavlinkV1.enums.MAV_FRAME.MAV_FRAME_GLOBAL_RELATIVE_ALT;
 import static com.MAVLinkModule.MavlinkV1.enums.MAV_FTP_OPCODE.*;
+import static com.MAVLinkModule.MavlinkV1.enums.MAV_MISSION_TYPE.MAV_MISSION_TYPE_MISSION;
+import static com.MAVLinkModule.MavlinkV1.enums.MAV_STATE.MAV_STATE_ACTIVE;
+import static com.MAVLinkModule.MavlinkV1.enums.MAV_TYPE.MAV_TYPE_GCS;
 import static com.MAVLinkModule.MavlinkV1.minimal.msg_heartbeat.MAVLINK_MSG_ID_HEARTBEAT;
 
 
-public class Main {
+public class Main  extends Thread{
     msg_heartbeat mHeartbeat = null;
     static int chunkSize = 200;
+    static OutputStream out = null;
+    static DatagramSocket socket;
+    static InetAddress addr;
+    static int port;
+
     public static void main(String[] args) throws IOException {
         // parseParamFile("output.bin");
         // ParamUnpacker.unpack("output.bin");
         // connectViaSerial("040507.txt");
+
         connectViaUDP();
         // Parampck.unpackFromFile("040507.txt");
     }
+    @Override
+    public void run() {
+        while (true) {
+            try {
+                sendHeartbeat();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            try {
+                Thread.sleep(1000); // Sleep for 1000 milliseconds (1 second)
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // Restore interrupted status
+                e.printStackTrace();
+            }
+        }
+    }
+    private static void sendHeartbeat() throws IOException {
+        msg_heartbeat heartbeat = new msg_heartbeat();
+        heartbeat.type = MAV_TYPE_GCS;
+        heartbeat.autopilot = MAV_AUTOPILOT_INVALID;
+        heartbeat.base_mode = 0;
+        heartbeat.custom_mode = 0;
+        heartbeat.system_status = MAV_STATE_ACTIVE;
 
-    private static void setInterval() throws IOException {
+        MAVLinkPacket packet = heartbeat.pack();
+        socket.send(new DatagramPacket(packet.encodePacket(), packet.encodePacket().length, addr, port));
+/*        out.write(packet.encodePacket());
+        out.flush();*/
+    }
+
+    private static void setCommandsInterval() throws IOException {
         DatagramSocket socket;
         InetAddress address;
 
@@ -90,7 +129,7 @@ public class Main {
 
         };
         for(int cmd : commands) {
-            byte[] buf = executeLongCommand((short) 1, (short) 1, MAV_CMD_SET_MESSAGE_INTERVAL, (short) 0, cmd, 1, 0, 0, 0, 0, 0);
+            byte[] buf = executeLongCommand((short) 1, (short) 1, MAV_CMD_REQUEST_MESSAGE, (short) 0, cmd, 1, 0, 0, 0, 0, 0);
 
             DatagramPacket packet
                     = new DatagramPacket(buf, buf.length, address, 18570);
@@ -120,16 +159,39 @@ public class Main {
             }
         }
     }
-
-
     private static void connectViaTCP() throws IOException {
+        MAVLinkPacket mavPkt = null;
+        MAVLinkMessage mavMessage = null;
+        Parser mavParser = new Parser();
+        byte[] buffer = new byte[2500];
+        Socket sp = new Socket("172.19.201.22", 5777);
+        InputStream in = sp.getInputStream();
+        out = sp.getOutputStream();
+        sendHeartbeat();
+        while(true) {
+            int len = in.read(buffer);
+            if(len == -1 || len == 0) continue;
+            byte[] copy = Arrays.copyOf(buffer,len);
+            for (byte byteValue : copy) {
+                mavPkt = mavParser.mavlink_parse_char(byteValue);
+                if (mavPkt != null) {
+                    mavMessage = mavPkt.unpack();
+                    if (mavMessage != null ) {
+                        System.out.println("mavMessage = " + mavMessage);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void getFileViaTCP() throws IOException {
         MAVLinkPacket mavPkt = null;
         MAVLinkMessage mavMessage = null;
         Parser mavParser = new Parser();
         byte[] buffer = new byte[2500];
 
 
-        Socket sp = new Socket("172.25.38.247", 5760);
+        Socket sp = new Socket("172.25.38.247", 5777);
 
         InputStream in = sp.getInputStream();
         OutputStream out = sp.getOutputStream();
@@ -192,8 +254,7 @@ public class Main {
         out.write(byteArray5);
         out.flush();
     }
-
-    private static void connectViaSerial(String filepath) throws IOException {
+    private static void connectViaSerial() throws IOException {
         MAVLinkPacket mavPkt = null;
         MAVLinkMessage mavMessage = null;
         Parser mavParser = new Parser();
@@ -202,6 +263,40 @@ public class Main {
         sp.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
         sp.openPort();
         OutputStream out = sp.getOutputStream();
+        byte[] buf = executeLongCommand((short) 1, (short) 1, MAV_CMD_REQUEST_MESSAGE, (short) 0, 148, 0, 0, 0, 0, 0, 0);
+        out.write(buf);
+        out.flush();
+
+        InputStream in = sp.getInputStream();
+        byte[] buffer = new byte[128];
+
+        while (true) {
+            int len = in.read(buffer);
+            if (len == -1 || len == 0) continue;
+            byte[] copy = Arrays.copyOf(buffer, len);
+            for (byte byteValue : copy) {
+                mavPkt = mavParser.mavlink_parse_char(byteValue);
+                if (mavPkt != null) {
+                    mavMessage = mavPkt.unpack();
+                    if (mavMessage != null && mavMessage instanceof msg_autopilot_version) {
+                        System.out.println("mavMessage = " + mavMessage);
+                    }
+                }
+            }
+        }
+
+
+    }
+    private static void connectViaSerialFile(String filepath) throws IOException {
+        MAVLinkPacket mavPkt = null;
+        MAVLinkMessage mavMessage = null;
+        Parser mavParser = new Parser();
+        SerialPort sp = SerialPort.getCommPorts()[0];
+        sp.setComPortParameters(57600, 8, 1, 0);
+        sp.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
+        sp.openPort();
+        OutputStream out = sp.getOutputStream();
+
         // doCalibrate(out);
 
  /*       byte[] byteArray5  = packFtpPacket((short)0, (short) 1, (short) MAV_COMPONENT.MAV_COMP_ID_ALL, 0,0,(short)0, (short) MAV_FTP_OPCODE_RESETSESSION,"",(short)0);
@@ -289,27 +384,32 @@ public class Main {
     }
 
     private static void connectViaUDP() throws IOException {
-        DatagramSocket serverSocket = new DatagramSocket(14550); // Listening port for UDP
+        socket = new DatagramSocket(18570); // Listening port for UDP
         Parser mavParser = new Parser();
         byte[] receiveData = new byte[1024];
         DatagramPacket receivePacket;
-
-        boolean isFirst = false;
-
+        boolean isFirst = true;
         while (true) {
             receivePacket = new DatagramPacket(receiveData, receiveData.length);
-            serverSocket.receive(receivePacket);
-            System.out.println("seq# = " + receivePacket.getData()[4]);
-
-            if(isFirst) {
-                isFirst = false;
-                getAllParameters(serverSocket, receivePacket.getAddress(),receivePacket.getPort());
-            }
+            socket.receive(receivePacket);
             MAVLinkPacket mavPacket = null;
+            addr = receivePacket.getAddress();
+            port = receivePacket.getPort();
+            if(isFirst) {
+                byte[] buf = executeLongCommand((short) 1, (short) 1, MAV_CMD_REQUEST_MESSAGE, (short) 0, 148, 0, 0, 0, 0, 0, 0);
+
+                DatagramPacket packet
+                        = new DatagramPacket(buf, buf.length, addr, port);
+                socket.send(packet);
+                isFirst = false;
+            }
             for (byte byteValue : receivePacket.getData()) {
                 mavPacket = mavParser.mavlink_parse_char(byteValue);
                 if (mavPacket != null) {
                     MAVLinkMessage mavMessage = mavPacket.unpack();
+                    if (mavMessage != null && mavMessage instanceof msg_autopilot_version) {
+                        System.out.println("mavMessage = " + mavMessage);
+                    }
                     if (mavMessage != null) {
                         System.out.println("mavMessage = " + mavMessage);
                         if (mavMessage instanceof msg_mission_request_int) {
@@ -319,14 +419,21 @@ public class Main {
             }
         }
     }
-    private static byte[] packMissionCount() {
+    private static byte[] packMissionClear() {
+        msg_mission_clear_all msg = new msg_mission_clear_all();
+        msg.target_component = 0;
+        msg.target_system = 1;
+        msg.mission_type = MAV_MISSION_TYPE_MISSION;
+        return msg.pack().encodePacket();
+    }
+    private static byte[] packRequestParamAll() {
         msg_param_request_list msg = new msg_param_request_list();
         msg.target_component = 0;
         msg.target_system = 1;
         return msg.pack().encodePacket();
     }
     private static void getAllParameters(DatagramSocket socket, InetAddress addr, int port) throws IOException {
-        byte[] byteArray = packMissionCount();
+        byte[] byteArray = packRequestParamAll();
         socket.send(new DatagramPacket(byteArray, byteArray.length, addr, port));
     }
 
